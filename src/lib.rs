@@ -3,9 +3,31 @@ mod utils;
 
 #[cfg(test)]
 mod tests {
-    use image::GenericImageView;
-    use crate::utils::{fs, bits};
+    use image::{DynamicImage, GenericImageView, Pixel, RgbImage, Rgba};
+
+    use crate::utils::{bits, fs};
+    use crate::steg::{hide, reveal};
+
     const IMAGE: &str = "mock/saitama.png";
+
+    fn create_mock_image() -> (DynamicImage, Vec<[u8; 4]>) {
+        let mut img = RgbImage::new(3, 3);
+
+        let vals: Vec<[u8; 4]> = vec![
+            [255, 0, 0, 255], [255, 255, 0, 255], [255, 0, 255, 255],
+            [255, 0, 0, 255], [0, 255, 0, 255],   [0, 0, 255, 255],
+            [0, 0, 255, 255], [0, 255, 0, 255], [150, 150, 255, 255]
+        ];
+
+        for i in 0..3 {
+            for j in 0..3 {
+                let pixel = Rgba(*vals.get((i * 3) + j).unwrap());
+                img.put_pixel(i as u32, j as u32, pixel.to_rgb());
+            }
+        }
+
+        (DynamicImage::ImageRgb8(img), vals)
+    }
 
     #[test]
     fn check_file_exists() {
@@ -76,4 +98,44 @@ mod tests {
 
         assert_eq!(bits::bytes_to_bits(chars), numbers_bits);
     }
+
+    #[test]
+    fn test_hide_reveal() {
+        let img = fs::load_image("mock/original.png").expect("READ ERROR");
+    
+        let data = bits::bytes_to_bits(b"ola mundo!");
+        let embed_text = hide(&img, &data).expect("EMBEDDING ERROR");
+        let extracted_text = reveal(&embed_text, 10);
+
+        assert_eq!(extracted_text.unwrap(), "ola mundo!\0");
+    }
+
+    #[test]
+    fn test_hide() {
+        let (orig, _) = create_mock_image();
+
+        let data = bits::bytes_to_bits(b"oi");
+        let embed = hide(&orig, &data).expect("EMBEDDING ERROR");
+
+        let expected: Vec<[u8; 4]> = vec![
+            [254, 1, 0, 255], [254, 255, 0, 255], [255, 1, 255, 255],
+            [255, 1, 0, 255], [1, 254, 0, 255],   [1, 0, 255, 255],
+            [1, 0, 255, 255], [1, 254, 0, 255], [150, 150, 255, 255]
+        ];
+
+
+        for i in 0..3 {
+            for j in 0..3 {
+                let pixel = embed.get_pixel(i, j);
+                let index: usize = ((i*3) + j) as usize;
+
+                let original_val = expected[index];
+                let embed_val = pixel.0;
+                
+                assert_eq!(original_val, embed_val);
+            }
+        }
+        
+    }
+
 }
