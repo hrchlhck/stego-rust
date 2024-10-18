@@ -1,87 +1,92 @@
-use image::{GenericImage, GenericImageView};
-
 pub mod utils;
+pub mod steg;
 
-use crate::utils::{fs, bits};
+use std::process::exit;
 
-fn hide() {
-    let mut img: image::DynamicImage = fs::load_image("mock/teste.png").unwrap();
-    let msg = b"abc";
-    let ch_bit: Vec<u8> = bits::bytes_to_bits(msg);
+use clap::{Parser, Subcommand};
 
-    let mut x = 0;
-    let mut y = 0;
-    let mut channel = 0;
-    let height = img.height();
-    let width = img.width();
-    for bit in ch_bit{
-        if x == width {
-            x = 0;
-            y += 1;
-        }
-
-        if y == height {
-            x = 0;
-            y = 0;
-            channel += 1;
-        }
-
-        if y == height && x == width && channel == 3 {
-            println!("End Of Image (EOI)");
-            break;
-        }
-
-        if x < width {
-            let mut pixel = img.get_pixel(x, y);
-    
-            if bit == 1 {
-                pixel.0[channel] |= 1;
-            } else {
-                pixel.0[channel] &= 0xFE;
-            }
-            img.put_pixel(x, y, pixel);
-            x += 1;
-        }
-    }
-
-    img.save("test.png").unwrap();
+#[derive(Subcommand, Debug, Clone, PartialEq)]
+enum Action {
+    /// Hide something in an existing image provided in --input-image flag
+    Hide,
+    /// Reveal something in an existing image provided in --input-image flag
+    Reveal
 }
 
-fn reveal(n: u32) {
-    let img: image::DynamicImage = fs::load_image("test.png").unwrap();
-    let mut res: Vec<u8> = vec![];
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Path of the image you want to hide/reveal something
+    #[arg(short, long)]
+    input_image: String,
 
-    let mut x = 0;
-    let mut y = 0;
-    let mut channel = 0;
-    let height = img.height();
-    let width = img.width();
-    for _ in 0..=n {
-        if x == width {
-            x = 0;
-            y += 1;
-        }
+    /// Path of the resulting image after hiding/revealing something
+    #[arg(short, long)]
+    output_image: String,
 
-        if y == height {
-            x = 0;
-            y = 0;
-            channel += 1;
-        }
+    /// If you want to hide a text or an image
+    #[arg(short = 't', long, default_value_t = true)]
+    is_text: bool,
 
-        if y == height && x == width && channel == 3 {
-            println!("End Of Image (EOI)");
-            break;
-        }
+    /// The text you want to hide
+    #[arg(short = 's', long, default_value_t = String::new())]
+    text: String,
 
-        if x < width {
-            res.push(img.get_pixel(x, y).0[channel] & 1);
-            x += 1;
-        }
-    }
-    println!("{}", bits::vec8_to_str(&res));
+    /// Number of characters you want to reveal
+    #[arg(short = 'n', long, default_value_t = 16)]
+    n_characters: u32,
+    
+    /// Action you want to take (hide/reveal)
+    #[command(subcommand)]
+    action: Action
 }
 
 fn main() {
-    hide();
-    reveal(24);
+    let args = Args::parse();
+
+    if args.is_text && args.text.len() == 0 && args.action == Action::Hide {
+        println!("It's not possible to hide an empty string. Consider using --text <TEXT> properly.");
+        exit(1);
+    }
+
+    let input_image = utils::fs::load_image(&args.input_image);
+    let img: image::DynamicImage;
+    match input_image {
+        Ok(i) => img = i,
+        Err(e) => {
+            eprintln!("{e}");
+            exit(1);
+        }
+    }
+
+    match args.action {
+        Action::Hide => {
+            let bytes = utils::bits::bytes_to_bits(args.text.as_bytes());
+            let result = steg::hide(&img, &bytes);
+
+            match result {
+                Ok(res_img) => {
+                    utils::fs::save_image(res_img, &args.output_image);
+                },
+                Err(e) => {
+                    eprintln!("{e}");
+                    exit(1);
+                }           
+            }
+
+        },
+        Action::Reveal => {
+            let result = steg::reveal(&img, args.n_characters);
+
+            match result {
+                Ok(res) => {
+                    println!("{res}");
+                },
+                Err(e) => {
+                    eprintln!("{e}");
+                    exit(1);
+                }           
+            }
+        }
+    }
 }

@@ -1,5 +1,11 @@
+use image::DynamicImage;
+
 pub fn bytes_to_bits(data: &[u8]) -> Vec<u8> {
     data.to_vec().iter().map(|x: &u8| u8_to_bit(*x)).flatten().collect()
+}
+
+pub fn image_to_bits(data: &DynamicImage) -> Vec<u8> {
+    vec![]
 }
 
 pub fn u8_to_bit(n: u8) -> Vec<u8> {
